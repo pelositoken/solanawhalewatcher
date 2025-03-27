@@ -1,0 +1,8 @@
+const ws = new WebSocket('wss://api.solana.fm/ws');
+
+ws.onmessage = (event) => {
+  const tx = JSON.parse(event.data);
+  if (tx.amount > 1000000000) { // 1 SOL
+    console.log('New whale transaction:', tx);
+  }
+};
