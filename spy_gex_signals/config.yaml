@@ -1,0 +1,40 @@
+# SPY/Gold Structure + GEX Signal System — configuration
+# No secrets belong in this file. Future keyed providers read env vars.
+
+instruments:
+  SPY:
+    price_symbol: SPY      # yfinance ticker for price bars
+    chain_symbol: SPY      # options chain used for GEX
+  GOLD:
+    price_symbol: GC=F     # gold futures for price structure
+    chain_symbol: GLD      # GLD ETF chain as the gold GEX proxy
+
+price:
+  provider: yfinance
+  # Timeframes the structure engine (Phase 2) will consume. yfinance caps
+  # 15m/5m history at ~60 days; 1h at ~730 days; 1d is unlimited.
+  timeframes: ["1d", "1h", "15m", "5m"]
+
+chain:
+  provider: cboe_delayed
+  archive_dir: data/chains
+
+gex:
+  # 'standard' = dealers long calls / short puts (SqueezeMetrics/SpotGamma
+  # convention; call gamma +, put gamma -). 'inverse' flips every sign.
+  dealer_sign_convention: standard
+  risk_free_rate: 0.045
+  contract_multiplier: 100
+  # Zero-gamma flip search: grid of spot levels +/- flip_search_pct around spot
+  flip_search_pct: 0.10
+  flip_grid_points: 81
+  # null = include all listed expirations; otherwise max days-to-expiry
+  max_dte: null
+  top_n_strikes: 5
+  # Hook for Phase 2/4: DOL-vs-major-GEX-strike alignment tolerance (fraction
+  # of spot). Not wired into anything yet.
+  dol_strike_tolerance_pct: 0.005
+
+logging:
+  dir: logs
+  decision_log: logs/decisions.jsonl
