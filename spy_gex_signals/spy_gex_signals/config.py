@@ -56,6 +56,49 @@ class GexConfig:
             )
 
 
+VALID_CSD_RULES = ("50pct", "prior_candle", "both")
+VALID_MIDPOINTS = ("range", "body")
+VALID_PRIOR_SCOPES = ("body", "full")
+VALID_ENTRY_TYPES = ("immediate", "fvg_retest")
+
+
+@dataclass(frozen=True)
+class SmtConfig:
+    enabled: bool = True
+    pairs: dict[str, str] = field(default_factory=dict)
+    min_correlation: float = 0.7
+    correlation_lookback_bars: int = 200
+
+
+@dataclass(frozen=True)
+class StructureConfig:
+    timeframe_pairs: tuple[tuple[str, str], ...] = (("1d", "1h"), ("1h", "5m"))
+    swing_strength: int = 2
+    csd_rule: str = "both"
+    sweep_candle_midpoint: str = "range"
+    prior_candle_scope: str = "body"
+    entry_type: str = "immediate"
+    fvg_retest_expiry_bars: int = 20
+    invalidation_buffer_pct: float = 0.0005
+    max_bars_sweep_to_csd: int = 5
+    high_visibility_atr_mult: float = 2.0
+    atr_period: int = 14
+    require_subtf_confirmation: bool = False
+    smt: SmtConfig = field(default_factory=SmtConfig)
+
+    def __post_init__(self) -> None:
+        if self.csd_rule not in VALID_CSD_RULES:
+            raise ValueError(f"structure.csd_rule must be one of {VALID_CSD_RULES}")
+        if self.sweep_candle_midpoint not in VALID_MIDPOINTS:
+            raise ValueError(f"structure.sweep_candle_midpoint must be one of {VALID_MIDPOINTS}")
+        if self.prior_candle_scope not in VALID_PRIOR_SCOPES:
+            raise ValueError(f"structure.prior_candle_scope must be one of {VALID_PRIOR_SCOPES}")
+        if self.entry_type not in VALID_ENTRY_TYPES:
+            raise ValueError(f"structure.entry_type must be one of {VALID_ENTRY_TYPES}")
+        if self.swing_strength < 1:
+            raise ValueError("structure.swing_strength must be >= 1")
+
+
 @dataclass(frozen=True)
 class LoggingConfig:
     dir: str = "logs"
@@ -68,6 +111,7 @@ class Config:
     price: PriceConfig = field(default_factory=PriceConfig)
     chain: ChainConfig = field(default_factory=ChainConfig)
     gex: GexConfig = field(default_factory=GexConfig)
+    structure: StructureConfig = field(default_factory=StructureConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
     def resolve_path(self, rel: str) -> Path:
@@ -95,5 +139,16 @@ def load_config(path: str | Path | None = None) -> Config:
                            "timeframes": tuple((raw.get("price") or {}).get("timeframes", ("1d", "1h", "15m", "5m")))})
     chain = ChainConfig(**(raw.get("chain") or {}))
     gex = GexConfig(**(raw.get("gex") or {}))
+
+    raw_structure = dict(raw.get("structure") or {})
+    smt = SmtConfig(**(raw_structure.pop("smt", None) or {}))
+    pairs = raw_structure.pop("timeframe_pairs", None)
+    if pairs is not None:
+        raw_structure["timeframe_pairs"] = tuple(
+            (p["htf"], p["ltf"]) if isinstance(p, dict) else tuple(p) for p in pairs
+        )
+    structure = StructureConfig(**raw_structure, smt=smt)
+
     logging_cfg = LoggingConfig(**(raw.get("logging") or {}))
-    return Config(instruments=instruments, price=price, chain=chain, gex=gex, logging=logging_cfg)
+    return Config(instruments=instruments, price=price, chain=chain, gex=gex,
+                  structure=structure, logging=logging_cfg)

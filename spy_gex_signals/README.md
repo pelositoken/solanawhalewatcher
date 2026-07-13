@@ -25,12 +25,12 @@ regime filter.
 
 ---
 
-## Status: Phase 1 (data layer)
+## Status: Phase 2 (structure engine)
 
 | Phase | Content | Status |
 |-------|---------|--------|
-| 1 | Price data, options chain, GEX computation + validation | **built — awaiting review** |
-| 2 | Structure/liquidity signal engine | not started (waiting on framework notes) |
+| 1 | Price data, options chain, GEX computation + validation | built — awaiting live validation vs published chart |
+| 2 | Structure/liquidity signal engine | **built — awaiting review** |
 | 3 | Structure-only backtest (edge checkpoint) | not started |
 | 4 | GEX regime gate | not started |
 | 5 | Risk & sizing layer (incl. hard kill-switch) | not started |
@@ -79,6 +79,31 @@ results exist, so it can't be mistaken for a validated long history.
   variants, since published charts differ on this and it is the usual
   reconciliation gap.
 
+## Structure engine (Phase 2)
+
+Implements the user-supplied framework spec mechanically (DOL → MSU →
+inducement sweep → CSD → 3R management). Key guardrails, enforced by code
+and tests:
+
+- **An MSS is never an entry trigger** — there is no code path from a
+  structure break to a signal (double-MSU trap). CSD is the only trigger.
+- **Body closes only** — wicks reaching a level never confirm anything.
+- CSD rules (`structure.csd_rule`): `50pct` (body close past the sweep
+  candle's midpoint — range or body midpoint, configurable) and
+  `prior_candle` (body close beyond the candle immediately preceding the
+  confirming candle; body or full-range scope, configurable). `both` =
+  either fires; **which rule fired is logged on every signal**.
+- SMT divergence (SPY↔QQQ, GC=F↔SI=F) is a confidence flag gated behind a
+  rolling-correlation check — never a required condition.
+- The engine is a bar-by-bar state machine over completed bars and is
+  timeframe-parameterized (`structure.timeframe_pairs`), so a historical
+  run is mechanically identical to a live run.
+- Every sweep considered, every rejection (with reason), and every signal
+  goes to the decision log.
+
+The GEX↔DOL alignment hook exists (`HtfContext.check_dol_gex_alignment`)
+and reports `not_wired` until Phase 4.
+
 ## Setup
 
 ```bash
@@ -106,6 +131,11 @@ python scripts/validate_gex.py --file data/chains/SPY/2026-07-13/193000Z.json.gz
 
 # Sanity-check the price layer (bar counts per timeframe)
 python scripts/check_price_data.py
+
+# Structure engine over history: every signal + every rejection and why
+python scripts/scan_structure.py                # all instruments/timeframe pairs
+python scripts/scan_structure.py --symbol SPY
+python scripts/scan_structure.py --fixture      # deterministic synthetic demo, no network
 ```
 
 Reports are written to `reports/`, logs to `logs/`.

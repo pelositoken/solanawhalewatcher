@@ -35,6 +35,45 @@ gex:
   # of spot). Not wired into anything yet.
   dol_strike_tolerance_pct: 0.005
 
+structure:
+  # Each pair is evaluated independently (the framework is fractal — the
+  # same inducement→CSD pattern nests at every timeframe).
+  timeframe_pairs:
+    - {htf: "1d", ltf: "1h"}
+    - {htf: "1h", ltf: "5m"}
+  # Fractal swing: high/low must exceed k bars on each side; a swing is only
+  # usable k bars after its extreme (confirmation lag, no lookahead).
+  swing_strength: 2
+  # CSD confirmation: '50pct' | 'prior_candle' | 'both' (either fires; the
+  # decision log records which rule fired on every signal).
+  csd_rule: both
+  # 50% rule midpoint of the sweep candle: 'range' (high-low) | 'body' (open-close)
+  sweep_candle_midpoint: range
+  # prior-candle rule scope: 'body' (clear prior candle's body) | 'full' (incl. wicks)
+  prior_candle_scope: body
+  # 'immediate' (next bar open) | 'fvg_retest' (limit at the confirmation FVG)
+  entry_type: immediate
+  fvg_retest_expiry_bars: 20
+  # Invalidation sits just beyond the sweep extreme by this fraction of price
+  invalidation_buffer_pct: 0.0005
+  # CSD must confirm within N bars of the (latest) sweep extreme or the setup expires
+  max_bars_sweep_to_csd: 5
+  # 'High visibility' flag: confirmation displacement > mult × ATR
+  high_visibility_atr_mult: 2.0
+  atr_period: 14
+  # Known-failure-mode mitigation (crowded setups): require a sub-LTF CSD too.
+  # Off by default; when off it is logged as not_evaluated, never silently skipped.
+  require_subtf_confirmation: false
+  smt:
+    # SMT divergence is a confidence booster, never a required gate.
+    enabled: true
+    pairs:
+      SPY: QQQ
+      "GC=F": "SI=F"
+    # Divergence only counts if the pair is genuinely correlated at the time
+    min_correlation: 0.7
+    correlation_lookback_bars: 200
+
 logging:
   dir: logs
   decision_log: logs/decisions.jsonl

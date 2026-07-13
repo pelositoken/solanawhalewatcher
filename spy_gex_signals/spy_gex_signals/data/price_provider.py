@@ -30,7 +30,7 @@ _YF_DEFAULT_PERIOD = {
     "1m": "7d",
 }
 
-_INTERVAL_DELTA = {
+INTERVAL_DELTA = {
     "1d": timedelta(days=1),
     "1h": timedelta(hours=1),
     "15m": timedelta(minutes=15),
@@ -71,7 +71,7 @@ def _standardize(df: pd.DataFrame, interval: str) -> pd.DataFrame:
     df = df[~df.index.duplicated(keep="last")].sort_index()
 
     # No-lookahead: drop the final bar if it hasn't finished forming yet.
-    delta = _INTERVAL_DELTA.get(interval)
+    delta = INTERVAL_DELTA.get(interval)
     if delta is not None and len(df) > 0:
         last_open = df.index[-1].to_pydatetime()
         if last_open + delta > datetime.now(timezone.utc):
