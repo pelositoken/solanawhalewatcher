@@ -371,6 +371,7 @@ class StructureEngine:
         signal = self._pending_immediate
         self._pending_immediate = None
         signal.finalize_entry(bar.open)
+        signal.filled_bar_index = bar.index
         self.result.signals.append(signal)
         self.result.bump("signals_emitted")
         self._decide(
@@ -421,6 +422,7 @@ class StructureEngine:
                 else:
                     fill = max(bar.open, p.entry_price)
                 p.signal.finalize_entry(fill)
+                p.signal.filled_bar_index = bar.index
                 self.result.signals.append(p.signal)
                 self.result.bump("signals_emitted")
                 self._decide(

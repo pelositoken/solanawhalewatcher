@@ -119,6 +119,7 @@ class StructureSignal:
     subtf_confirmation: str           # 'not_evaluated' (config off) | 'confirmed' | ...
     gex_alignment: str = "not_wired"  # Phase 4 fills this
     status: str = "pending"           # 'pending' | 'filled' | 'expired_unfilled'
+    filled_bar_index: int | None = None   # LTF bar ordinal where the entry filled
     reasons: list[str] = field(default_factory=list)
 
     def finalize_entry(self, entry: float) -> None:

@@ -25,13 +25,13 @@ regime filter.
 
 ---
 
-## Status: Phase 2 (structure engine)
+## Status: Phase 3 (structure-only backtest)
 
 | Phase | Content | Status |
 |-------|---------|--------|
 | 1 | Price data, options chain, GEX computation + validation | built — awaiting live validation vs published chart |
-| 2 | Structure/liquidity signal engine | **built — awaiting review** |
-| 3 | Structure-only backtest (edge checkpoint) | not started |
+| 2 | Structure/liquidity signal engine | built — review remediation applied |
+| 3 | Structure-only backtest (edge checkpoint) | **built — run on real data pending** |
 | 4 | GEX regime gate | not started |
 | 5 | Risk & sizing layer (incl. hard kill-switch) | not started |
 | 6 | Comparative backtest (gated vs. ungated, walk-forward) | not started |
@@ -137,8 +137,26 @@ python scripts/check_price_data.py
 # Structure engine over history: every signal + every rejection and why
 python scripts/scan_structure.py                # all instruments/timeframe pairs
 python scripts/scan_structure.py --symbol SPY
+python scripts/scan_structure.py --report       # + full markdown eyeball report
 python scripts/scan_structure.py --fixture      # deterministic synthetic demo, no network
+
+# Phase 3: structure-only backtest (NO GEX), Entry-1 only, per-pair metrics,
+# max_bars_sweep_to_csd sensitivity at 3/5/8, edge-checkpoint verdict
+python scripts/backtest_structure.py
+python scripts/backtest_structure.py --symbol SPY
+python scripts/backtest_structure.py --fixture  # pipeline smoke test, no network
 ```
+
+### Data-source timing (Databento / GEX)
+
+- **Phase 3** needs price bars only — yfinance works free (2y of 1h; 5m capped
+  at ~60 days, so the 1h/5m pair has a thin sample). A Databento key
+  (`DATABENTO_API_KEY` env var, provider not yet implemented) would lift the
+  intraday cap and provide real GC futures bars.
+- **Phase 4** needs current chains only — free CBOE feed already built.
+- **Phase 6** is where historical options data binds: the gated-vs-ungated
+  comparison window equals your historical GEX coverage (Databento OPRA,
+  Polygon options, or CBOE DataShop — else only self-archived snapshots).
 
 Reports are written to `reports/`, logs to `logs/`.
 
