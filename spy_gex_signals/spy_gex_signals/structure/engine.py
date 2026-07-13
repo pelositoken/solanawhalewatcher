@@ -61,6 +61,7 @@ class _PendingFvgEntry:
 class EngineResult:
     signals: list[StructureSignal] = field(default_factory=list)
     counters: dict[str, int] = field(default_factory=dict)
+    events: list[dict] = field(default_factory=list)  # every decision, in order
     mss_event_count: int = 0
 
     def bump(self, key: str) -> None:
@@ -100,11 +101,12 @@ class StructureEngine:
     # ---------- logging helper ----------
 
     def _decide(self, rule: str, inputs: dict, output, reason: str) -> None:
-        if self.dlog is None:
-            return
         inputs = {"instrument": self.instrument, "tf_pair": self.tf_pair, **inputs}
-        self.dlog.log(component="structure.engine", rule=rule,
-                      inputs=inputs, output=output, reason=reason)
+        self.result.events.append({"rule": rule, "inputs": inputs,
+                                   "output": output, "reason": reason})
+        if self.dlog is not None:
+            self.dlog.log(component="structure.engine", rule=rule,
+                          inputs=inputs, output=output, reason=reason)
 
     # ---------- main entry point ----------
 
@@ -115,7 +117,6 @@ class StructureEngine:
         ltf_delta = INTERVAL_DELTA[self.ltf_tf]
 
         h = 0
-        prev_bar: Bar | None = None
         for bar in ltf_bars:
             bar_close_ts = bar.ts + ltf_delta
             # Feed HTF bars that have COMPLETED by this LTF bar's close.
@@ -132,10 +133,9 @@ class StructureEngine:
             self._update_atr(bar)
 
             if self._active is not None:
-                self._process_active_sweep(bar, prev_bar)
+                self._process_active_sweep(bar)
             else:
                 self._look_for_sweep(bar)
-            prev_bar = bar
 
         self.result.mss_event_count = len(self.ltf_ms.mss_events)
         return self.result
@@ -235,7 +235,7 @@ class StructureEngine:
                    "triggers (double-MSU trap guardrail).",
         )
 
-    def _process_active_sweep(self, bar: Bar, prev_bar: Bar | None) -> None:
+    def _process_active_sweep(self, bar: Bar) -> None:
         a = self._active
         d = a.sweep.direction
 
@@ -250,10 +250,8 @@ class StructureEngine:
             return  # CSD is judged on candles AFTER the sweep candle
 
         a.bars_since_extreme += 1
-        if prev_bar is None:
-            return
 
-        csd = check_csd(bar, prev_bar, a.sweep, a.sweep_bar, self.cfg)
+        csd = check_csd(bar, a.sweep, a.sweep_bar, self.cfg)
         if csd is not None:
             self._emit_signal(bar, csd)
             return
@@ -344,6 +342,7 @@ class StructureEngine:
                     "csd_close": csd.close,
                     "threshold_50pct": csd.threshold_50pct,
                     "threshold_prior_candle": csd.threshold_prior,
+                    "threshold_prior_raw_boundary": csd.threshold_prior_boundary,
                     "sweep_extreme": a.sweep.sweep_extreme,
                     "inducement_level": a.sweep.inducement.price,
                     "dol_level": signal.dol_level,

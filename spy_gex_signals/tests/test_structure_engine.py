@@ -78,17 +78,73 @@ def test_fvg_retest_entry_type_rejects_when_no_gap():
     assert result.counters.get("rejected_no_fvg_for_retest", 0) == 1
 
 
-def test_prior_candle_only_confirms_one_bar_later():
-    # 'Prior candle' = the candle immediately preceding the CONFIRMING candle.
-    # The first recovery close (104.2) doesn't clear the sweep candle's body
-    # high (104.6), so prior_candle can't fire where 50pct did; the NEXT bar's
-    # close (104.8) clears its predecessor's body high (104.2) and confirms.
+def test_prior_candle_measures_against_sweep_candle():
+    # The first recovery close (104.2) doesn't clear the SWEEP candle's body
+    # high (104.6), so prior_candle can't fire where 50pct did; the next
+    # close (104.8) clears 104.6 and confirms.
     cfg = StructureConfig(csd_rule="prior_candle")
     result = make_engine(cfg).run(fixtures.htf_frame(), fixtures.ltf_frame())
     assert len(result.signals) == 1
     s = result.signals[0]
     assert s.csd_rule_fired == "prior_candle"
-    assert s.entry == pytest.approx(104.8)  # fill one bar later than the 50pct path
+    assert s.entry == pytest.approx(104.8)
+
+
+def test_prior_candle_ignores_small_interim_bodies():
+    # Regression for review point 1: confirmation 3 bars after the sweep,
+    # through small interim bodies. Bar +2 closes 103.4 — above the interim
+    # bar's body high (103.2), which the old literal-predecessor semantics
+    # confirmed on — but far below the sweep candle's 104.6, so it must NOT
+    # confirm. Bar +3 closes 104.8 > 104.6 and does.
+    cfg = StructureConfig(csd_rule="prior_candle")
+    ltf = fixtures.ltf_frame_slow_recovery()
+    result = make_engine(cfg).run(fixtures.htf_frame(), ltf)
+    assert len(result.signals) == 1
+    s = result.signals[0]
+    assert s.csd_rule_fired == "prior_candle"
+    assert s.created_ts == ltf.index[20 + 12].to_pydatetime()  # bar +3, NOT bar +2
+    assert s.entry == pytest.approx(104.8)
+
+
+def test_full_short_scenario_hand_computed_values():
+    # Independent short-side scenario (review point 4) — expected values are
+    # hand-derived in fixtures.py, not mirrored from the long path.
+    result = make_engine().run(fixtures.htf_frame_bear(), fixtures.ltf_frame_bear())
+    assert len(result.signals) == 1
+    s = result.signals[0]
+    assert s.direction == Direction.SHORT
+    assert s.status == "filled"
+    assert s.inducement_level == pytest.approx(125.2)
+    assert s.sweep_extreme == pytest.approx(125.6)
+    assert s.csd_rule_fired == "50pct"            # 123.9 < range mid 124.35
+    assert s.entry == pytest.approx(123.9)        # next bar open
+    assert s.stop == pytest.approx(125.6628)      # 125.6 × 1.0005
+    risk = s.stop - s.entry
+    assert risk == pytest.approx(1.7628)
+    assert s.target_3r == pytest.approx(118.6116)  # 123.9 − 3 × 1.7628
+    assert s.dol_level == pytest.approx(118.0)     # swept 124 low must be skipped
+    assert s.dol_r_multiple == pytest.approx((123.9 - 118.0) / 1.7628, rel=1e-6)
+    assert s.smt_status == "not_available"         # no correlated feed wired here
+
+
+def test_fvg_retest_fills_on_retrace():
+    cfg = StructureConfig(entry_type="fvg_retest")
+    result = make_engine(cfg).run(fixtures.htf_frame(), fixtures.ltf_frame_fvg_retest())
+    assert len(result.signals) == 1
+    s = result.signals[0]
+    assert s.status == "filled"
+    assert s.entry == pytest.approx(103.5)          # FVG upper edge [103.4, 103.5]
+    assert s.stop == pytest.approx(102.6 * 0.9995)  # stop unchanged by entry type
+    risk = s.entry - s.stop
+    assert s.target_3r == pytest.approx(103.5 + 3 * risk)  # 3R from the FVG fill
+
+
+def test_fvg_retest_expires_when_price_runs():
+    cfg = StructureConfig(entry_type="fvg_retest")
+    result = make_engine(cfg).run(fixtures.htf_frame(),
+                                  fixtures.ltf_frame_fvg_retest(retrace=False))
+    assert len(result.signals) == 0
+    assert result.counters.get("fvg_entries_expired_unfilled", 0) == 1
 
 
 def test_subtf_required_rejects_loudly_when_unplumbed():

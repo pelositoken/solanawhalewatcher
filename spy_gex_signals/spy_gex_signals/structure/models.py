@@ -86,7 +86,8 @@ class CsdEvent:
     bar_index: int
     close: float
     threshold_50pct: float | None
-    threshold_prior: float | None
+    threshold_prior: float | None            # effective (clamped ≥ the 50% midpoint)
+    threshold_prior_boundary: float | None = None  # raw sweep-candle body/full boundary
 
 
 @dataclass

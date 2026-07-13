@@ -90,9 +90,11 @@ and tests:
 - **Body closes only** — wicks reaching a level never confirm anything.
 - CSD rules (`structure.csd_rule`): `50pct` (body close past the sweep
   candle's midpoint — range or body midpoint, configurable) and
-  `prior_candle` (body close beyond the candle immediately preceding the
-  confirming candle; body or full-range scope, configurable). `both` =
-  either fires; **which rule fired is logged on every signal**.
+  `prior_candle` (body close beyond the SWEEP candle itself — body or
+  full-range scope, configurable; always the latest sweep-extreme candle
+  under the deeper-grab reset, and clamped to be at least as demanding as
+  the 50% midpoint so it is strictly the stronger rule). `both` = either
+  fires; **which rule fired is logged on every signal**.
 - SMT divergence (SPY↔QQQ, GC=F↔SI=F) is a confidence flag gated behind a
   rolling-correlation check — never a required condition.
 - The engine is a bar-by-bar state machine over completed bars and is
