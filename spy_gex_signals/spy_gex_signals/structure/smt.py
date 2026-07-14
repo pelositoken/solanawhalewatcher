@@ -31,7 +31,12 @@ class SmtChecker:
 
     def __init__(self, cfg: SmtConfig, swing_strength: int,
                  primary_df: pd.DataFrame, correlated_df: pd.DataFrame | None,
-                 correlated_symbol: str = ""):
+                 correlated_symbol: str = "",
+                 roll_dates: list | None = None):
+        """roll_dates: continuous-futures roll timestamps for the CORRELATED
+        instrument (e.g. SI.c.0). Roll gaps are splice artifacts: returns that
+        span one are dropped from the correlation window, and divergence
+        checks whose 3-bar window contains one report not_available."""
         self.cfg = cfg
         self.correlated_symbol = correlated_symbol
         self._primary_closes = primary_df["close"] if primary_df is not None else None
@@ -39,6 +44,7 @@ class SmtChecker:
         self._ms = MarketStructure(swing_strength)
         self._cursor = 0
         self._closes = correlated_df["close"] if correlated_df is not None else None
+        self._rolls = sorted(pd.Timestamp(r) for r in (roll_dates or []))
 
     def _advance(self, until_ts) -> None:
         """Feed correlated bars whose OPEN time is <= until_ts (same-bar alignment;
@@ -56,6 +62,14 @@ class SmtChecker:
         if len(tail) < max(20, self.cfg.correlation_lookback_bars // 4):
             return None
         rets = tail.pct_change().dropna()
+        # Drop the return that spans each roll (splice artifact, not a move).
+        for r in self._rolls:
+            pos = rets.index.searchsorted(r)
+            if pos < len(rets):
+                idx = rets.index[pos]
+                prev_pos = tail.index.searchsorted(idx) - 1
+                if prev_pos >= 0 and tail.index[prev_pos] < r <= idx:
+                    rets = rets.drop(index=idx)
         if rets.empty:
             return None
         return float(rets["p"].corr(rets["c"]))
@@ -87,6 +101,11 @@ class SmtChecker:
         recent = [b for b in self._bars[:self._cursor]][-3:]
         if not recent:
             return "not_available", {"reason": "no correlated bars at sweep time"}
+        window_start = pd.Timestamp(recent[0].ts)
+        window_end = pd.Timestamp(sweep_ts)
+        if any(window_start <= r <= window_end for r in self._rolls):
+            return "not_available", {"reason": "roll_gap",
+                                     "correlated_symbol": self.correlated_symbol}
         if direction == Direction.LONG:
             broke = any(b.low < swing.price for b in recent)
         else:

@@ -56,12 +56,14 @@ def main() -> int:
             fixtures.htf_frame_bear(), fixtures.ltf_frame_bear(),
             max_bars_values=SENSITIVITY, decision_logger=dlog)
     else:
-        provider = make_price_provider(cfg.price.provider)
+        provider = make_price_provider(cfg.price.provider, cfg)
         frames: dict = {}
+        rolls: dict = {}   # continuous-futures roll timestamps per (symbol, tf)
 
         def frame(symbol: str, tf: str):
             if (symbol, tf) not in frames:
                 frames[(symbol, tf)] = provider.get_history(symbol, tf)
+                rolls[(symbol, tf)] = provider.get_roll_dates(symbol)
             return frames[(symbol, tf)]
 
         for name, inst in cfg.instruments.items():
@@ -81,15 +83,17 @@ def main() -> int:
                 def smt_factory(_ltf_df=ltf_df, _corr=corr_symbol, _ltf=ltf):
                     if not (cfg.structure.smt.enabled and _corr):
                         return None
+                    corr_df = frame(_corr, _ltf)
                     return SmtChecker(cfg.structure.smt, cfg.structure.swing_strength,
-                                      primary_df=_ltf_df,
-                                      correlated_df=frame(_corr, _ltf),
-                                      correlated_symbol=_corr)
+                                      primary_df=_ltf_df, correlated_df=corr_df,
+                                      correlated_symbol=_corr,
+                                      roll_dates=rolls.get((_corr, _ltf), []))
 
                 all_metrics[f"{name} {htf}/{ltf}"] = run_pair_backtest(
                     name, htf, ltf, cfg.structure, htf_df, ltf_df,
                     smt_checker_factory=smt_factory,
-                    max_bars_values=SENSITIVITY, decision_logger=dlog)
+                    max_bars_values=SENSITIVITY, decision_logger=dlog,
+                    roll_dates=rolls.get((inst.price_symbol, ltf), []))
 
     report = render_report(all_metrics, cfg.structure.max_bars_sweep_to_csd, data_notes)
     reports_dir = cfg.resolve_path("reports")

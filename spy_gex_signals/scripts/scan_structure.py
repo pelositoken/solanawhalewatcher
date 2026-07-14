@@ -149,12 +149,14 @@ def run_fixture(cfg, dlog, report: bool) -> None:
 
 
 def run_live(cfg, dlog, only_symbol: str | None, report: bool) -> None:
-    provider = make_price_provider(cfg.price.provider)
+    provider = make_price_provider(cfg.price.provider, cfg)
     frames: dict[tuple[str, str], object] = {}
+    rolls: dict = {}   # continuous-futures roll timestamps per (symbol, tf)
 
     def frame(symbol: str, tf: str):
         if (symbol, tf) not in frames:
             frames[(symbol, tf)] = provider.get_history(symbol, tf)
+            rolls[(symbol, tf)] = provider.get_roll_dates(symbol)
         return frames[(symbol, tf)]
 
     for name, inst in cfg.instruments.items():
@@ -169,9 +171,11 @@ def run_live(cfg, dlog, only_symbol: str | None, report: bool) -> None:
                 continue
             smt = None
             if cfg.structure.smt.enabled and corr_symbol:
+                corr_df = frame(corr_symbol, ltf)
                 smt = SmtChecker(cfg.structure.smt, cfg.structure.swing_strength,
-                                 primary_df=ltf_df, correlated_df=frame(corr_symbol, ltf),
-                                 correlated_symbol=corr_symbol)
+                                 primary_df=ltf_df, correlated_df=corr_df,
+                                 correlated_symbol=corr_symbol,
+                                 roll_dates=rolls.get((corr_symbol, ltf), []))
             engine = StructureEngine(name, htf, ltf, cfg.structure,
                                      decision_logger=dlog, smt_checker=smt)
             result = engine.run(htf_df, ltf_df)

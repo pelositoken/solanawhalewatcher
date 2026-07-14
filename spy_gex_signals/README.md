@@ -150,13 +150,40 @@ python scripts/backtest_structure.py --fixture  # pipeline smoke test, no networ
 ### Data-source timing (Databento / GEX)
 
 - **Phase 3** needs price bars only — yfinance works free (2y of 1h; 5m capped
-  at ~60 days, so the 1h/5m pair has a thin sample). A Databento key
-  (`DATABENTO_API_KEY` env var, provider not yet implemented) would lift the
-  intraday cap and provide real GC futures bars.
+  at ~60 days, so the 1h/5m pair has a thin sample). Databento lifts the
+  intraday cap and provides real GC futures bars.
 - **Phase 4** needs current chains only — free CBOE feed already built.
 - **Phase 6** is where historical options data binds: the gated-vs-ungated
   comparison window equals your historical GEX coverage (Databento OPRA,
   Polygon options, or CBOE DataShop — else only self-archived snapshots).
+
+### Databento setup
+
+1. Get/rotate your key at databento.com → API Keys. **If a key has ever been
+   pasted into a chat, email, or ticket, rotate it first** — treat it as
+   compromised.
+2. Set it in your shell only (never in code, config, or git):
+   `export DATABENTO_API_KEY="db-..."`
+3. `pip install databento`, then set `price.provider: databento` in
+   `config.yaml` and verify with `python scripts/check_price_data.py`.
+
+Notes:
+- **Cost:** Databento historical is usage-billed. Every fetch prints the
+  `metadata.get_cost()` estimate BEFORE downloading and a running session
+  total after — watch the first run. Intraday lookback is capped at 365 days
+  by `price.databento_intraday_lookback_days` (deliberate cost/sample
+  trade-off; see the config comment).
+- **5m/15m bars** are resampled from `ohlcv-1m` (Databento has no native 5m);
+  bar boundaries are left-labeled/left-closed and covered by a reference test.
+- **Continuous futures (GC.c.0 / SI.c.0) are unadjusted splices.** The
+  provider records roll dates; the backtest EXCLUDES any trade whose
+  sweep→exit window spans a roll (reported as `excl_roll`), and SMT checks
+  report `not_available (roll_gap)` near a roll instead of a fake read.
+- **Staleness:** `get_latest_quote()` returns `(price, as_of_ts)`. Anything
+  that shows a price to a human (Phase 7 alerts/dashboard) must show the
+  timestamp with it — "as of HH:MM UTC, ~N min delayed" — never a bare number.
+- Dataset ids are config values; if your account uses the newer `EQUS.BASIC`
+  naming instead of `DBEQ.BASIC`, change it in `config.yaml`, not code.
 
 Reports are written to `reports/`, logs to `logs/`.
 

@@ -53,6 +53,7 @@ class PairMetrics:
     n_closed: int
     n_open: int
     n_ambiguous: int
+    n_excluded_roll: int
     wins: int
     losses: int
     win_rate: float | None
@@ -88,8 +89,22 @@ def simulate_trade(signal: StructureSignal, ltf_df: pd.DataFrame) -> TradeResult
     return TradeResult(signal, "open", None, None, None)
 
 
+def spans_roll(trade: TradeResult, ltf_index, roll_dates) -> bool:
+    """True if the trade's full window — first inducement sweep through exit
+    (or end of data while open) — contains a continuous-contract roll. Such
+    trades are built on splice artifacts and must not count as evidence."""
+    if not roll_dates:
+        return False
+    start = trade.signal.first_sweep_ts
+    end = (ltf_index[trade.exit_index] if trade.exit_index is not None
+           else ltf_index[-1])
+    start, end = pd.Timestamp(start), pd.Timestamp(end)
+    return any(start <= pd.Timestamp(r) <= end for r in roll_dates)
+
+
 def compute_metrics(label: str, max_bars: int, trades: list[TradeResult],
-                    counters: dict, span_days: float) -> PairMetrics:
+                    counters: dict, span_days: float,
+                    n_excluded_roll: int = 0) -> PairMetrics:
     closed = [t for t in trades if t.outcome != "open"]
     wins = sum(1 for t in closed if t.outcome == "win")
     losses = len(closed) - wins
@@ -112,6 +127,7 @@ def compute_metrics(label: str, max_bars: int, trades: list[TradeResult],
         n_closed=n_closed,
         n_open=len(trades) - n_closed,
         n_ambiguous=sum(1 for t in closed if t.ambiguous),
+        n_excluded_roll=n_excluded_roll,
         wins=wins,
         losses=losses,
         win_rate=wins / n_closed if n_closed else None,
@@ -135,11 +151,14 @@ def run_pair_backtest(
     smt_checker_factory=None,
     max_bars_values: tuple[int, ...] = (3, 5, 8),
     decision_logger: DecisionLogger | None = None,
+    roll_dates: list | None = None,
 ) -> list[PairMetrics]:
     """Run the engine + simulator at each max_bars_sweep_to_csd sensitivity value.
 
     Entry-1 only is enforced here regardless of config (Phase 3 scope);
     smt_checker_factory is called per run because SmtChecker is stateful.
+    roll_dates: continuous-futures roll timestamps for THIS instrument —
+    trades whose window spans one are excluded and counted, never scored.
     """
     span_days = ((ltf_df.index[-1] - ltf_df.index[0]).total_seconds() / 86400
                  if len(ltf_df) > 1 else 0.0)
@@ -150,10 +169,13 @@ def run_pair_backtest(
         engine = StructureEngine(instrument, htf, ltf, run_cfg,
                                  decision_logger=decision_logger, smt_checker=smt)
         result = engine.run(htf_df, ltf_df)
-        trades = [simulate_trade(s, ltf_df) for s in result.signals
-                  if s.status == "filled"]
+        all_trades = [simulate_trade(s, ltf_df) for s in result.signals
+                      if s.status == "filled"]
+        trades = [t for t in all_trades
+                  if not spans_roll(t, ltf_df.index, roll_dates)]
         out.append(compute_metrics(f"{instrument} {htf}/{ltf}", mb, trades,
-                                   result.counters, span_days))
+                                   result.counters, span_days,
+                                   n_excluded_roll=len(all_trades) - len(trades)))
     return out
 
 
@@ -186,8 +208,8 @@ def render_report(all_metrics: dict[str, list[PairMetrics]],
     lines += ["", "## Results by instrument / timeframe pair", ""]
 
     header = ("| pair | max_bars | signals | closed | open | wins | losses | ambig "
-              "| win rate | avg R | total R | max DD (R) | trades/mo |")
-    sep = "|" + "---|" * 12
+              "| excl_roll | win rate | avg R | total R | max DD (R) | trades/mo |")
+    sep = "|" + "---|" * 13
 
     for label, metrics_list in all_metrics.items():
         m0 = metrics_list[0]
@@ -201,7 +223,7 @@ def render_report(all_metrics: dict[str, list[PairMetrics]],
             lines.append(
                 f"| {m.label} | {m.max_bars_sweep_to_csd}{star} | {m.n_signals} "
                 f"| {m.n_closed} | {m.n_open} | {m.wins} | {m.losses} "
-                f"| {m.n_ambiguous} | {_fmt(m.win_rate, pct=True)} "
+                f"| {m.n_ambiguous} | {m.n_excluded_roll} | {_fmt(m.win_rate, pct=True)} "
                 f"| {_fmt(m.avg_r)} | {_fmt(m.total_r)} "
                 f"| {_fmt(m.max_drawdown_r)} | {_fmt(m.trades_per_month, nd=1)} |")
         lines.append("")

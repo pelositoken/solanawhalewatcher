@@ -46,6 +46,7 @@ log = logging.getLogger(__name__)
 class _ActiveSweep:
     sweep: SweepEvent
     sweep_bar: Bar
+    first_sweep_ts: object = None   # ts of the bar that first ran the level
     bars_since_extreme: int = 0
 
 
@@ -223,6 +224,7 @@ class StructureEngine:
                              sweep_bar_index=bar.index, sweep_extreme=extreme,
                              first_sweep_index=bar.index),
             sweep_bar=bar,
+            first_sweep_ts=bar.ts,
         )
         self._decide(
             rule="inducement_swept",
@@ -326,6 +328,7 @@ class StructureEngine:
             target_3r=None,
             inducement_level=a.sweep.inducement.price,
             sweep_extreme=a.sweep.sweep_extreme,
+            first_sweep_ts=a.first_sweep_ts,
             csd_rule_fired=csd.rule_fired,
             dol_level=dol.price if dol else None,
             dol_r_multiple=None,

@@ -111,6 +111,7 @@ class StructureSignal:
     target_3r: float | None           # None until entry is known
     inducement_level: float
     sweep_extreme: float
+    first_sweep_ts: datetime | None   # when the inducement was first swept
     csd_rule_fired: str
     dol_level: float | None
     dol_r_multiple: float | None      # (DOL - entry) / risk, thesis stretch beyond 3R

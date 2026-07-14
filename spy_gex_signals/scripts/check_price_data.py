@@ -22,7 +22,7 @@ from spy_gex_signals.logging_setup import setup_logging
 def main() -> int:
     cfg = load_config()
     setup_logging(cfg.resolve_path(cfg.logging.dir))
-    provider = make_price_provider(cfg.price.provider)
+    provider = make_price_provider(cfg.price.provider, cfg)
 
     print(f"Price provider: {provider.name}\n")
     print(f"{'instrument':<10} {'ticker':<8} {'tf':<5} {'bars':>7}  range")

@@ -23,12 +23,15 @@ class InstrumentConfig:
     name: str
     price_symbol: str
     chain_symbol: str
+    databento: dict | None = None   # {dataset, symbol, stype_in?}
 
 
 @dataclass(frozen=True)
 class PriceConfig:
     provider: str = "yfinance"
     timeframes: tuple[str, ...] = ("1d", "1h", "15m", "5m")
+    databento_symbols: dict = field(default_factory=dict)
+    databento_intraday_lookback_days: int = 365
 
 
 @dataclass(frozen=True)
@@ -124,6 +127,14 @@ class Config:
             if inst.chain_symbol.upper() == chain_symbol.upper():
                 return inst
         return None
+
+    def databento_mapping(self, price_symbol: str) -> dict | None:
+        """Databento {dataset, symbol, stype_in?} for a price symbol, from the
+        instrument config or the price.databento_symbols fallback map."""
+        for inst in self.instruments.values():
+            if inst.price_symbol == price_symbol and inst.databento:
+                return inst.databento
+        return self.price.databento_symbols.get(price_symbol)
 
 
 def load_config(path: str | Path | None = None) -> Config:

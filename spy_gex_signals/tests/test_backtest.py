@@ -23,7 +23,8 @@ def make_signal(direction=Direction.LONG, entry=100.0, stop=99.0, fill_index=0):
     s = StructureSignal(
         instrument="T", tf_pair="1h/5m", direction=direction, created_ts=T0,
         entry_type="immediate", entry=None, stop=stop, target_3r=None,
-        inducement_level=99.5, sweep_extreme=stop, csd_rule_fired="50pct",
+        inducement_level=99.5, sweep_extreme=stop, first_sweep_ts=T0,
+        csd_rule_fired="50pct",
         dol_level=None, dol_r_multiple=None, smt_status="not_available",
         high_visibility=False, subtf_confirmation="not_evaluated")
     s.finalize_entry(entry)
@@ -91,9 +92,13 @@ def test_edge_verdict_thresholds():
         trades_r = [3.0] * wins + [-1.0] * (n_closed - wins)
         avg = sum(trades_r) / n_closed if n_closed else None
         from spy_gex_signals.backtest.structure_backtest import PairMetrics
-        return PairMetrics("T", 5, n_closed, n_closed, 0, 0, wins,
-                           n_closed - wins, wins / n_closed if n_closed else None,
-                           avg, sum(trades_r) if n_closed else None, 1.0, 1.0, 30.0)
+        return PairMetrics(
+            label="T", max_bars_sweep_to_csd=5, n_signals=n_closed,
+            n_closed=n_closed, n_open=0, n_ambiguous=0, n_excluded_roll=0,
+            wins=wins, losses=n_closed - wins,
+            win_rate=wins / n_closed if n_closed else None,
+            avg_r=avg, total_r=sum(trades_r) if n_closed else None,
+            max_drawdown_r=1.0, trades_per_month=1.0, span_days=30.0)
     assert "NO TRADES" in edge_verdict(m(0, 0))
     assert "INSUFFICIENT SAMPLE" in edge_verdict(m(10, 8))
     assert "POSSIBLE EDGE" in edge_verdict(m(40, 16))   # 40% wr > 25% breakeven

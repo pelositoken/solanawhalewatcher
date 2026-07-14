@@ -5,15 +5,30 @@ instruments:
   SPY:
     price_symbol: SPY      # yfinance ticker for price bars
     chain_symbol: SPY      # options chain used for GEX
+    databento: {dataset: DBEQ.BASIC, symbol: SPY}
   GOLD:
     price_symbol: GC=F     # gold futures for price structure
     chain_symbol: GLD      # GLD ETF chain as the gold GEX proxy
+    # Continuous front-month, calendar roll. UNADJUSTED splice — roll-date
+    # gaps are artifacts; the provider reports roll dates and the backtest
+    # excludes signals whose window spans one.
+    databento: {dataset: GLBX.MDP3, symbol: GC.c.0, stype_in: continuous}
 
 price:
+  # 'yfinance' (free, default) or 'databento' (requires DATABENTO_API_KEY
+  # env var — never put the key in this file or in code).
   provider: yfinance
   # Timeframes the structure engine (Phase 2) will consume. yfinance caps
   # 15m/5m history at ~60 days; 1h at ~730 days; 1d is unlimited.
   timeframes: ["1d", "1h", "15m", "5m"]
+  # Databento mappings for symbols that aren't instruments (SMT pairs etc.)
+  databento_symbols:
+    QQQ: {dataset: DBEQ.BASIC, symbol: QQQ}
+    "SI=F": {dataset: GLBX.MDP3, symbol: SI.c.0, stype_in: continuous}
+  # 5m/15m are built by resampling ohlcv-1m. 365 days ≈ 250 trading days:
+  # a sufficient LTF sample at roughly half the data cost of 730d. This is
+  # THE single intraday-lookback setting — deliberate decision, see plan.
+  databento_intraday_lookback_days: 365
 
 chain:
   provider: cboe_delayed

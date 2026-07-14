@@ -4,4 +4,5 @@ scipy>=1.10
 PyYAML>=6.0
 requests>=2.31
 yfinance>=0.2.40
+databento>=0.34   # only needed if price.provider is 'databento'
 pytest>=7.0
