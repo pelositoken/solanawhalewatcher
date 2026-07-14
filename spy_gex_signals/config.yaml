@@ -1,0 +1,94 @@
+# SPY/Gold Structure + GEX Signal System — configuration
+# No secrets belong in this file. Future keyed providers read env vars.
+
+instruments:
+  SPY:
+    price_symbol: SPY      # yfinance ticker for price bars
+    chain_symbol: SPY      # options chain used for GEX
+    databento: {dataset: DBEQ.BASIC, symbol: SPY}
+  GOLD:
+    price_symbol: GC=F     # gold futures for price structure
+    chain_symbol: GLD      # GLD ETF chain as the gold GEX proxy
+    # Continuous front-month, calendar roll. UNADJUSTED splice — roll-date
+    # gaps are artifacts; the provider reports roll dates and the backtest
+    # excludes signals whose window spans one.
+    databento: {dataset: GLBX.MDP3, symbol: GC.c.0, stype_in: continuous}
+
+price:
+  # 'yfinance' (free, default) or 'databento' (requires DATABENTO_API_KEY
+  # env var — never put the key in this file or in code).
+  provider: yfinance
+  # Timeframes the structure engine (Phase 2) will consume. yfinance caps
+  # 15m/5m history at ~60 days; 1h at ~730 days; 1d is unlimited.
+  timeframes: ["1d", "1h", "15m", "5m"]
+  # Databento mappings for symbols that aren't instruments (SMT pairs etc.)
+  databento_symbols:
+    QQQ: {dataset: DBEQ.BASIC, symbol: QQQ}
+    "SI=F": {dataset: GLBX.MDP3, symbol: SI.c.0, stype_in: continuous}
+  # 5m/15m are built by resampling ohlcv-1m. 365 days ≈ 250 trading days:
+  # a sufficient LTF sample at roughly half the data cost of 730d. This is
+  # THE single intraday-lookback setting — deliberate decision, see plan.
+  databento_intraday_lookback_days: 365
+
+chain:
+  provider: cboe_delayed
+  archive_dir: data/chains
+
+gex:
+  # 'standard' = dealers long calls / short puts (SqueezeMetrics/SpotGamma
+  # convention; call gamma +, put gamma -). 'inverse' flips every sign.
+  dealer_sign_convention: standard
+  risk_free_rate: 0.045
+  contract_multiplier: 100
+  # Zero-gamma flip search: grid of spot levels +/- flip_search_pct around spot
+  flip_search_pct: 0.10
+  flip_grid_points: 81
+  # null = include all listed expirations; otherwise max days-to-expiry
+  max_dte: null
+  top_n_strikes: 5
+  # Hook for Phase 2/4: DOL-vs-major-GEX-strike alignment tolerance (fraction
+  # of spot). Not wired into anything yet.
+  dol_strike_tolerance_pct: 0.005
+
+structure:
+  # Each pair is evaluated independently (the framework is fractal — the
+  # same inducement→CSD pattern nests at every timeframe).
+  timeframe_pairs:
+    - {htf: "1d", ltf: "1h"}
+    - {htf: "1h", ltf: "5m"}
+  # Fractal swing: high/low must exceed k bars on each side; a swing is only
+  # usable k bars after its extreme (confirmation lag, no lookahead).
+  swing_strength: 2
+  # CSD confirmation: '50pct' | 'prior_candle' | 'both' (either fires; the
+  # decision log records which rule fired on every signal).
+  csd_rule: both
+  # 50% rule midpoint of the sweep candle: 'range' (high-low) | 'body' (open-close)
+  sweep_candle_midpoint: range
+  # prior-candle rule scope: 'body' (clear prior candle's body) | 'full' (incl. wicks)
+  prior_candle_scope: body
+  # 'immediate' (next bar open) | 'fvg_retest' (limit at the confirmation FVG)
+  entry_type: immediate
+  fvg_retest_expiry_bars: 20
+  # Invalidation sits just beyond the sweep extreme by this fraction of price
+  invalidation_buffer_pct: 0.0005
+  # CSD must confirm within N bars of the (latest) sweep extreme or the setup expires
+  max_bars_sweep_to_csd: 5
+  # 'High visibility' flag: confirmation displacement > mult × ATR
+  high_visibility_atr_mult: 2.0
+  atr_period: 14
+  # Known-failure-mode mitigation (crowded setups): require a sub-LTF CSD too.
+  # Off by default; when off it is logged as not_evaluated, never silently skipped.
+  require_subtf_confirmation: false
+  smt:
+    # SMT divergence is a confidence booster, never a required gate.
+    enabled: true
+    pairs:
+      SPY: QQQ
+      "GC=F": "SI=F"
+    # Divergence only counts if the pair is genuinely correlated at the time
+    min_correlation: 0.7
+    correlation_lookback_bars: 200
+
+logging:
+  dir: logs
+  decision_log: logs/decisions.jsonl
